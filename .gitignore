@@ -11,3 +11,6 @@ build/
 *.user
 Thumbs.db
 desktop.ini
+
+# Third-party tool - fetch it with tools/champollion/README.md
+tools/champollion/Champollion.exe
