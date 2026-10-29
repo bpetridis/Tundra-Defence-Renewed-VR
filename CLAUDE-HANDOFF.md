@@ -263,3 +263,100 @@ prediction holds, native code is the only proper fix. Do not add the dependency 
 
 **Nothing has been tested in game.** Everything so far compiles and the reasoning is written
 down, which is not the same as working.
+
+---
+
+# Session 2026-10-29, part 3: VR APIs found, cloning scaffolding removed, waits converted
+
+Commits since part 2:
+
+- `f784df6` — documented how placement actually works and the VR APIs available (`docs/07`)
+- `b2dfdb1` — `tools/Package-TestBuild.ps1`, so there is finally an installable build
+- `73864a5` — removed the object-cloning scaffolding: a perpetual poll and shipped debug spam
+- `41e3851` — converted 15 of 17 held `Utility.Wait` calls to timers (`docs/08`)
+
+All build 56/56, zero errors. **A test build was sent to the user and he is testing it now.**
+Package: `dist/TundraDefenceRenewedVR-Overlay-41e3851.zip` — reproduce with
+`.\tools\Package-TestBuild.ps1 -Mode Overlay`.
+
+## Repo location gotcha
+
+The mod repo is at `C:\Code\TundraDefenceRenewedVR`, but this session's working directory is
+`C:\Code\EngineFixes-private`, so it is not visible in the workspace tree. A junction now exists
+at `C:\Code\EngineFixes-private\TundraDefenceRenewedVR` (gitignored in the EngineFixes repo). The
+user had to restart his workspace to see it; some editors do not follow junctions, in which case
+open the real path directly.
+
+## The SKSE answer, settled
+
+The user pushed back twice on this and was right both times. The settled position:
+
+1. **SKSE's Papyrus functions do not move work off the VM.** Still Papyrus, same per-frame
+   budget. Never makes a loop cheaper.
+2. **Native plugins that delete script work at load time** (SPID, BaseObjectSwapper, SkyPatcher,
+   MCMHelper, po3_PapyrusExtender) — checked, and **none apply to this mod**. It distributes
+   nothing to actors, swaps no base objects, and its settings are message boxes. Genuinely
+   nothing to hand off.
+3. **A custom DLL** — only the placement loop, which runs only while actively building.
+
+So there is nothing left to offload. Everything remaining is "do not poll" or "do not hold a
+stack", not "do it in C++". Do not re-litigate this without new information.
+
+**The real lever for the user's symptom was held stacks, not timers** — see `docs/08`. His
+complaint was ~200k script instances "jockeying for position" across his whole list; this mod is
+a rounding error in that, except for the wait-stacks, which spiked at the worst moment.
+
+## VR APIs — all four installed WITH Papyrus interfaces, no DLL needed
+
+Reference copies in `docs/vr-api-reference/` (not compiled into the mod). The originals live in
+`C:\Steam\steamapps\common\SkyrimVR\Data\Scripts`.
+
+- **HiggsVR** — `GrabObject`, `GetGrabbedObject`, `CanGrabObject`, `IsTwoHanding`, plus grab,
+  drop, pull and two-handing events. `GrabObject` + `OnObjectDropped` would **delete the hot
+  placement loop entirely**, since Havok would move the piece natively.
+- **PapyrusVR / SkyrimVRTools** — real HMD and controller poses in Skyrim world space, VR button
+  events, controller-attached overlap spheres for hand proximity.
+- **VRIK** — `VrikAddGestureAction` fires a mod event from a hand gesture, zero polling.
+- **PLANCK** — actor ragdoll only, not useful here.
+
+SKSE VR's own script sources are also present (`Form.psc` there has `RegisterForKey`).
+
+## RESUME HERE (supersedes every list above)
+
+1. ~~polling pass~~ **done**, `3a1b4b9` + `73864a5`
+2. ~~placement loop~~ **done**, `06588fe`
+3. ~~`Utility.Wait` conversion~~ **done**, `41e3851`
+4. **WAITING ON THE USER'S TEST RESULTS.** He has `41e3851` installed. The order he was given:
+   - does anything work at all (place an object, confirm, run a raid)
+   - **does the preview piece follow head pitch?** Prediction: no, because the loop reads the
+     player's body pitch which in VR does not follow the head. This one answer decides the whole
+     VR plan. See `docs/07`.
+   - control speed - now frame-rate independent, tuned to match what 60 fps used to feel like, so
+     on a 90 Hz headset it will feel SLOWER than before. That is correct, not a regression.
+   - **the dead-actor paths are the risk area in `41e3851`** - corpses should still vanish after
+     their delay, and the scavenger crate should still collect from them
+5. HIGGS grab probe — agreed for later, explicitly deferred ("yeah we can try higgs later let's
+   not jump too far ahead"). Needs compiling against `HiggsVR.psc`, which makes HIGGS a hard
+   requirement, so put it on a throwaway branch, never `main`. Test `CanGrabObject` then
+   `GrabObject` on one small prop and one house-sized piece - the pieces are `Activator`, `Door`,
+   `Furniture` and `Container` base objects and may have no movable rigid body.
+6. Collapse the nine copy-paste raid functions — preserve `NatureRaid`'s 39 differing lines exactly.
+7. Audit the 50 `PlaceAtMe` sites against the 54 `Delete()` for cleanup on every path.
+8. Get Aykan's wording on licensing (`original/` is his, MIT covers only the revival work).
+9. Dead key-binding stubs (`BindKey`, `RebindDialog`, `iGetKeyPressed`, `keyMenu = 40`) — **do
+   not delete.** They are the author's abandoned attempt at real key bindings and are where SKSE
+   keys would go for flat-screen SSE players. Decide after item 4.
+
+## Open findings, noted but not fixed
+
+- `aaafortvioletscript` — 5 s poll forever until `SpecialPlans.GetStage() == 10`. If the player
+  never triggers that stage it polls for the entire game. Slowing it is safe and easy.
+- `aaafortfarmplotscript` — **latent bug.** The `isActivated` branch of `OnUpdate` does not
+  re-arm, so a farm plot produces crops exactly once and then stops. Almost certainly meant to
+  repeat. Fixing it would ADD polling, so it needs the user's call.
+- `aaafortcampfirescript` and `aaafortmultiplaceonspawnscript` — per-object 5 s polls that stop
+  once `status == "placed"`. If the last placement was cancelled instead, they keep polling until
+  the next successful one. Minor.
+
+**Nothing has been tested in game yet.** Everything compiles and the reasoning is written down,
+which is not the same as working.
