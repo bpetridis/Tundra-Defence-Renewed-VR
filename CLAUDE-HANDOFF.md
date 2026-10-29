@@ -190,3 +190,76 @@ shipped bytecode — **run it before and after every change**.
 7. Delete the dead key-binding stubs (`BindKey`, `RebindDialog`, `iGetKeyPressed`).
 
 **Nothing in the mod has been changed yet.** Everything so far is recovery, verification and notes.
+
+---
+
+# Session 2026-10-29, part 2: the placement loop and the SKSE question
+
+Two commits since the notes above:
+
+- `3a1b4b9` — stopped five polling loops that ran for the whole game. See `docs/05-polling-pass.md`.
+- `06588fe` — made the build preview loop frame-rate independent and roughly halved its cost per
+  tick. See `docs/06-placement-loop.md`.
+
+Both build 56/56 with zero errors. 185,223 → 188,049 bytes, 49/56 within ±2%.
+
+## The one thing to say out loud about SKSE
+
+The user pushed back on an earlier claim that there was nothing to offload. He was right to.
+The correction that matters:
+
+**SKSE's Papyrus functions do not move work off the Papyrus VM.** `Input.IsKeyPressed`,
+`Form.RegisterForKey`, `UI.*`, mod events — all of it still runs as Papyrus, on the same
+per-frame budget. Replacing a vanilla call with an SKSE call never makes a loop cheaper. Only
+native C++ in an SKSE plugin genuinely offloads anything.
+
+So "offload to SKSE" is two separate projects, and they should never be discussed as one:
+extra capability for Papyrus scripts (cheap, no performance gain) versus a native plugin
+(real offload, new hard dependency, real work).
+
+SKSE VR's script sources **are** on this machine at
+`C:\Steam\steamapps\common\SkyrimVR\Data\Scripts\Source` — 1,481 `.psc`, and `Form.psc` there
+carries `RegisterForKey` / `OnKeyDown` / `OnKeyUp`. So the SKSE route compiles today if wanted.
+The CK's own `Data\Source\Scripts` (SSE, 14,301 files) is vanilla only, no SKSE.
+
+## The placement loop, in one paragraph
+
+`StartPositioning` arms `RegisterForSingleUpdate(0.01)` and `OnUpdate` re-arms itself until the
+player confirms or cancels. Input comes from two **spells** (`aaafortspellcontrols`, an
+ActiveMagicEffect) that set booleans on the quest; the loop is the repeat mechanism for a
+hold-to-adjust control, which is why it cannot simply be deleted. Papyrus cannot serve 0.01 —
+one tick per frame is the ceiling — and nothing was scaled by elapsed time, so the control
+speed *was* the frame rate. Fixed with a `scale` argument from `Utility.GetCurrentRealTime()`
+against a `ReferenceRate` property of 60.0, so 60 fps behaves exactly as before and every other
+rate now matches it.
+
+## Untested prediction, needs the headset
+
+`UpdateObjectPosition` reads `GetAngleX()` from the player for the vertical placement. In VR the
+player's pitch is usually not the head's pitch. **Prediction: looking up and down does not raise
+or lower the preview object in VR, so half the placement control is dead.** Five-minute test:
+start placing something, look up and down, watch whether it moves vertically.
+
+This test gates the native-plugin decision — Papyrus cannot read the HMD pose, so if the
+prediction holds, native code is the only proper fix. Do not add the dependency before testing.
+
+## RESUME HERE (supersedes every list above)
+
+1. ~~Stop the unguarded polls~~ **done, `3a1b4b9`** (5 fixed, 1 was a no-op and removed,
+   `aaafortrandomquestscript` left alone deliberately — its poll is the mod working).
+2. ~~The placement loop~~ **done, `06588fe`**.
+3. **Headset test: does the preview object follow head pitch?** Gates everything VR.
+   Also worth trying `UpdateInterval` at 0.01 vs 0.03 vs 0.05 for feel.
+4. Convert the 17 long `Utility.Wait` calls to timers — targets listed in
+   `docs/02-script-analysis.md`. The 120 s ones in `aaafortstationaryguardscript` and
+   `aaafortraiderscript` are the worst.
+5. Collapse the nine copy-paste raid functions — preserve `NatureRaid`'s 39 differing lines exactly.
+6. Audit the 50 `PlaceAtMe` sites against the 54 `Delete()` for cleanup on every path.
+7. Get Aykan's wording on licensing (`original/` is his, MIT covers only the revival work).
+8. The dead key-binding stubs (`BindKey`, `RebindDialog`, `iGetKeyPressed`, `keyMenu = 40`):
+   **do not delete them yet.** They are the author's abandoned attempt at real key bindings, and
+   if SKSE keys get added for flat-screen SSE players they are the place to do it. Decide after
+   item 3.
+
+**Nothing has been tested in game.** Everything so far compiles and the reasoning is written
+down, which is not the same as working.
