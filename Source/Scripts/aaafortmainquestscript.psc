@@ -10,6 +10,25 @@ ScriptName aaaFortMainQuestScript Extends Quest conditional
 
 ;-- Variables ---------------------------------------
 
+; The player reference never changes, so positioning fetches it once instead of six times per
+; tick inside the loop at the bottom of this script.
+Actor PlayerRef
+
+; Float mirrors of the Int distance and rotation properties. Scaling movement by elapsed time
+; produces fractions, and rounding to Int every tick would throw them away and stall slow input.
+Float distanceFloat
+Float rotationxFloat
+Float rotationyFloat
+Float rotationzFloat
+
+; Real time at the previous positioning tick, so movement is scaled by how long that tick
+; actually took instead of assuming every tick is the same length.
+Float lastTickTime
+
+; What the glow shaders are showing: 0 none, 1 green, 2 red. The loop used to call Play and Stop
+; on both shaders every single tick, re-starting a shader that was already running.
+Int glowState
+
 ;-- Properties --------------------------------------
 Int Property AXIS_X = 2 AutoReadOnly
 Int Property AXIS_Y = 1 AutoReadOnly
@@ -106,6 +125,19 @@ Int Property stage = 0 Auto
 String Property status = "inactive" Auto
 Bool Property tutorialDone = False Auto
 
+; How often the positioning loop runs, in seconds. The original asked for 0.01 - a hundred times
+; a second - which Papyrus cannot deliver: a pending update is only picked up on a game update
+; pass, so the real rate is the frame rate, up to that ceiling. Kept at 0.01 so nothing changes
+; by default. Raising it now only affects how closely the preview tracks your view, not how fast
+; the controls move, because the controls below are scaled by elapsed time.
+Float Property UpdateInterval = 0.01 Auto
+
+; The tick rate the original per-tick DistanceSpeed and RotationSpeed numbers were tuned against.
+; Scaling by elapsed time times this reproduces the original feel exactly at 60 fps and makes
+; every other frame rate match it, instead of the controls running half again as fast at 90 fps
+; and at half speed at 30.
+Float Property ReferenceRate = 60.0 Auto
+
 ;-- Functions ---------------------------------------
 
 ; Skipped compiler generated GetState
@@ -137,12 +169,17 @@ Function ResetObjectPosition()
   distance = 400 ; #DEBUG_LINE_NO:132
 EndFunction
 
+; Puts the preview object a fixed distance out along the player's facing. Unchanged arithmetic;
+; the five Game.GetPlayer() calls are now one cached reference, which matters in a loop this hot.
 Function UpdateObjectPosition(ObjectReference object)
-  Float playerY = Game.GetPlayer().GetPositionY() ; #DEBUG_LINE_NO:136
-  Float playerX = Game.GetPlayer().GetPositionX() ; #DEBUG_LINE_NO:137
-  Float playerZ = Game.GetPlayer().GetPositionZ() ; #DEBUG_LINE_NO:138
-  Float playerRotationZ = Game.GetPlayer().GetAngleZ() ; #DEBUG_LINE_NO:139
-  Float playerRotationX = Game.GetPlayer().GetAngleX() ; #DEBUG_LINE_NO:140
+  If PlayerRef == None
+    PlayerRef = Game.GetPlayer()
+  EndIf
+  Float playerY = PlayerRef.GetPositionY() ; #DEBUG_LINE_NO:136
+  Float playerX = PlayerRef.GetPositionX() ; #DEBUG_LINE_NO:137
+  Float playerZ = PlayerRef.GetPositionZ() ; #DEBUG_LINE_NO:138
+  Float playerRotationZ = PlayerRef.GetAngleZ() ; #DEBUG_LINE_NO:139
+  Float playerRotationX = PlayerRef.GetAngleX() ; #DEBUG_LINE_NO:140
   Float objectZ = Math.sin(playerRotationX) * distance as Float ; #DEBUG_LINE_NO:141
   objectZ = playerZ - objectZ + 80 as Float ; #DEBUG_LINE_NO:142
   Float objectX = Math.sin(playerRotationZ) * distance as Float ; #DEBUG_LINE_NO:143
@@ -152,16 +189,32 @@ Function UpdateObjectPosition(ObjectReference object)
   object.TranslateTo(objectX, objectY, objectZ, rotationx as Float, rotationy as Float, rotationz as Float, 8000 as Float, 8000 as Float) ; #DEBUG_LINE_NO:148
 EndFunction
 
-Function UpdateInput()
+; Pulls the Int properties into the float mirrors. Other scripts write distance and rotationz
+; directly before positioning starts, so the mirrors have to be re-read, not trusted.
+Function SyncInputFromProperties()
+  distanceFloat = distance as Float
+  rotationxFloat = rotationx as Float
+  rotationyFloat = rotationy as Float
+  rotationzFloat = rotationz as Float
+EndFunction
+
+; Applies the held input for one tick. scale is how much of a reference tick this one was worth,
+; so a long tick moves the object further and a short one less: it travels the same distance per
+; second whatever the frame rate. The original added the whole of DistanceSpeed every tick, which
+; made the controls exactly as fast as the machine was, so the author's numbers only feel right
+; on the author's machine.
+Function UpdateInput(Float scale)
   If currentMode == Self.MODE_DISTANCE ; #DEBUG_LINE_NO:152
     If inputPlus && inputMinus && !hasChangedMode ; #DEBUG_LINE_NO:153
       currentMode = Self.MODE_ROTATE_Z ; #DEBUG_LINE_NO:154
       ModeRotateZDialog.Show(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0) ; #DEBUG_LINE_NO:155
       hasChangedMode = True ; #DEBUG_LINE_NO:156
     ElseIf inputPlus && !inputMinus ; #DEBUG_LINE_NO:157
-      distance += DistanceSpeed ; #DEBUG_LINE_NO:158
+      distanceFloat += DistanceSpeed as Float * scale ; #DEBUG_LINE_NO:158
+      distance = distanceFloat as Int
     ElseIf inputMinus && !inputPlus ; #DEBUG_LINE_NO:159
-      distance -= DistanceSpeed ; #DEBUG_LINE_NO:160
+      distanceFloat -= DistanceSpeed as Float * scale ; #DEBUG_LINE_NO:160
+      distance = distanceFloat as Int
     EndIf
   ElseIf currentMode == Self.MODE_ROTATE_Z ; #DEBUG_LINE_NO:162
     If inputPlus && inputMinus && !hasChangedMode ; #DEBUG_LINE_NO:163
@@ -170,19 +223,25 @@ Function UpdateInput()
       hasChangedMode = True ; #DEBUG_LINE_NO:166
     ElseIf inputPlus && !inputMinus ; #DEBUG_LINE_NO:167
       If currentAxis == Self.AXIS_X ; #DEBUG_LINE_NO:168
-        rotationx += RotationSpeed ; #DEBUG_LINE_NO:169
+        rotationxFloat += RotationSpeed as Float * scale ; #DEBUG_LINE_NO:169
+        rotationx = rotationxFloat as Int
       ElseIf currentAxis == Self.AXIS_Y ; #DEBUG_LINE_NO:170
-        rotationy += RotationSpeed ; #DEBUG_LINE_NO:171
+        rotationyFloat += RotationSpeed as Float * scale ; #DEBUG_LINE_NO:171
+        rotationy = rotationyFloat as Int
       ElseIf currentAxis == Self.AXIS_Z ; #DEBUG_LINE_NO:172
-        rotationz += RotationSpeed ; #DEBUG_LINE_NO:173
+        rotationzFloat += RotationSpeed as Float * scale ; #DEBUG_LINE_NO:173
+        rotationz = rotationzFloat as Int
       EndIf
     ElseIf inputMinus && !inputPlus ; #DEBUG_LINE_NO:175
       If currentAxis == Self.AXIS_X ; #DEBUG_LINE_NO:176
-        rotationx -= RotationSpeed ; #DEBUG_LINE_NO:177
+        rotationxFloat -= RotationSpeed as Float * scale ; #DEBUG_LINE_NO:177
+        rotationx = rotationxFloat as Int
       ElseIf currentAxis == Self.AXIS_Y ; #DEBUG_LINE_NO:178
-        rotationy -= RotationSpeed ; #DEBUG_LINE_NO:179
+        rotationyFloat -= RotationSpeed as Float * scale ; #DEBUG_LINE_NO:179
+        rotationy = rotationyFloat as Int
       ElseIf currentAxis == Self.AXIS_Z ; #DEBUG_LINE_NO:180
-        rotationz -= RotationSpeed ; #DEBUG_LINE_NO:181
+        rotationzFloat -= RotationSpeed as Float * scale ; #DEBUG_LINE_NO:181
+        rotationz = rotationzFloat as Int
       EndIf
     EndIf
   EndIf
@@ -192,6 +251,10 @@ Function UpdateInput()
 EndFunction
 
 Function StartPositioning(ObjectReference Ref, Potion Cancel, Bool reuse, Bool dontDelete)
+  PlayerRef = Game.GetPlayer()
+  Self.SyncInputFromProperties()
+  lastTickTime = Utility.GetCurrentRealTime()
+  glowState = 0
   cancelPotion = Cancel ; #DEBUG_LINE_NO:192
   shouldReusePlan = reuse ; #DEBUG_LINE_NO:193
   dontDeleteOnCancel = dontDelete ; #DEBUG_LINE_NO:194
@@ -203,7 +266,7 @@ Function StartPositioning(ObjectReference Ref, Potion Cancel, Bool reuse, Bool d
   Self.UpdateObjectPosition(CurrentObject) ; #DEBUG_LINE_NO:202
   stage = 1 ; #DEBUG_LINE_NO:204
   Self.UnregisterForUpdate() ; #DEBUG_LINE_NO:206
-  Self.RegisterForSingleUpdate(0.01) ; #DEBUG_LINE_NO:207
+  Self.RegisterForSingleUpdate(UpdateInterval) ; #DEBUG_LINE_NO:207
 EndFunction
 
 Function ConfirmPlacement()
@@ -218,6 +281,9 @@ Function ConfirmPlacement()
     CurrentObject.MoveTo(CurrentObject, 0.0, 0.0, 0.0, True) ; #DEBUG_LINE_NO:220
     RedGlow.Stop(CurrentObject) ; #DEBUG_LINE_NO:221
     GreenGlow.Stop(CurrentObject) ; #DEBUG_LINE_NO:222
+    ; Nothing is glowing now. The reuse branch below carries on positioning a brand new object,
+    ; which has no shader on it, so the loop has to be told to apply one on its next tick.
+    glowState = 0
     If shouldReusePlan ; #DEBUG_LINE_NO:224
       CurrentObject = CurrentObject.PlaceAtMe(CurrentObject.GetBaseObject(), 1, False, False) ; #DEBUG_LINE_NO:225
       ReusablePlanDialog.Show(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0) ; #DEBUG_LINE_NO:226
@@ -274,6 +340,7 @@ Function CancelPlacement()
       Game.GetPlayer().AddItem(cancelPotion as Form, 1, False) ; #DEBUG_LINE_NO:285
     EndIf
     CurrentObject.StopTranslation() ; #DEBUG_LINE_NO:287
+    glowState = 0
     If dontDeleteOnCancel ; #DEBUG_LINE_NO:288
       CurrentObject.MoveTo(RefHolding, 0.0, 0.0, 0.0, True) ; #DEBUG_LINE_NO:289
     Else
@@ -291,6 +358,17 @@ Function CancelPlacement()
   EndIf
 EndFunction
 
+; The build preview loop. It runs only while an object is being placed - stage 1 - and stops the
+; moment placement is confirmed or cancelled. Four changes from the original, none of which alter
+; what the player sees:
+;
+;   - the player reference is fetched once per tick instead of six times, and the distance from
+;     the object to the fort marker once instead of up to three times
+;   - the glow shaders are only touched when the red/green state actually changes, rather than
+;     being re-started on every tick for as long as positioning lasts
+;   - movement is scaled by how long the tick took, so the controls run at one speed on every
+;     machine instead of tracking the frame rate
+;   - the interval is a property, so the tick rate can be tested without editing this script
 Event OnUpdate()
   If stage == 1 ; #DEBUG_LINE_NO:306
     If !tutorialDone ; #DEBUG_LINE_NO:307
@@ -300,48 +378,65 @@ Event OnUpdate()
       EndIf
       tutorialDone = True ; #DEBUG_LINE_NO:312
     EndIf
-    Self.UpdateInput() ; #DEBUG_LINE_NO:315
+    ; How long since the previous tick, as a multiple of a reference tick. Clamped so that a
+    ; stall, a loading screen or the message box above cannot make the object leap on one tick.
+    Float now = Utility.GetCurrentRealTime()
+    Float scale = (now - lastTickTime) * ReferenceRate
+    If scale <= 0.0 || scale > 4.0
+      scale = 1.0
+    EndIf
+    lastTickTime = now
+    Self.UpdateInput(scale) ; #DEBUG_LINE_NO:315
     Self.UpdateObjectPosition(CurrentObject) ; #DEBUG_LINE_NO:316
-    If AdvancedMode || Game.GetPlayer().GetParentCell() == aaaFortWoodenCabinInterior || Game.GetPlayer().GetParentCell() == aaaFortGrandEstateInterior ; #DEBUG_LINE_NO:318
+    If PlayerRef == None
+      PlayerRef = Game.GetPlayer()
+    EndIf
+    Cell playerCell = PlayerRef.GetParentCell()
+    If AdvancedMode || playerCell == aaaFortWoodenCabinInterior || playerCell == aaaFortGrandEstateInterior ; #DEBUG_LINE_NO:318
       canPlace = True ; #DEBUG_LINE_NO:319
       placeDistance = 0 ; #DEBUG_LINE_NO:320
-    ElseIf !setWaterWell && !setBoundaries ; #DEBUG_LINE_NO:321
-      If CurrentObject.GetDistance(marker) < maxDistance as Float ; #DEBUG_LINE_NO:322
-        canPlace = True ; #DEBUG_LINE_NO:323
-        placeDistance = 0 ; #DEBUG_LINE_NO:324
-      Else
-        canPlace = False ; #DEBUG_LINE_NO:326
-        placeDistance = CurrentObject.GetDistance(marker) as Int - maxDistance ; #DEBUG_LINE_NO:327
-        close = False ; #DEBUG_LINE_NO:329
-      EndIf
-    ElseIf setBoundaries
-      If CurrentObject.GetDistance(marker) >= (maxDistance - 500) as Float ; #DEBUG_LINE_NO:332
-        If CurrentObject.GetDistance(marker) <= maxDistance as Float ; #DEBUG_LINE_NO:333
-          canPlace = True ; #DEBUG_LINE_NO:334
-          placeDistance = 0 ; #DEBUG_LINE_NO:335
+    Else
+      Float markerDistance = CurrentObject.GetDistance(marker)
+      If !setWaterWell && !setBoundaries ; #DEBUG_LINE_NO:321
+        If markerDistance < maxDistance as Float ; #DEBUG_LINE_NO:322
+          canPlace = True ; #DEBUG_LINE_NO:323
+          placeDistance = 0 ; #DEBUG_LINE_NO:324
         Else
-          canPlace = False ; #DEBUG_LINE_NO:337
-          placeDistance = CurrentObject.GetDistance(marker) as Int - maxDistance - 500 ; #DEBUG_LINE_NO:338
-          close = False ; #DEBUG_LINE_NO:340
+          canPlace = False ; #DEBUG_LINE_NO:326
+          placeDistance = markerDistance as Int - maxDistance ; #DEBUG_LINE_NO:327
+          close = False ; #DEBUG_LINE_NO:329
         EndIf
-      Else
-        canPlace = False ; #DEBUG_LINE_NO:343
-        placeDistance = maxDistance - 500 - CurrentObject.GetDistance(marker) as Int ; #DEBUG_LINE_NO:344
-        close = True ; #DEBUG_LINE_NO:346
+      ElseIf setBoundaries
+        If markerDistance >= (maxDistance - 500) as Float ; #DEBUG_LINE_NO:332
+          If markerDistance <= maxDistance as Float ; #DEBUG_LINE_NO:333
+            canPlace = True ; #DEBUG_LINE_NO:334
+            placeDistance = 0 ; #DEBUG_LINE_NO:335
+          Else
+            canPlace = False ; #DEBUG_LINE_NO:337
+            placeDistance = markerDistance as Int - maxDistance - 500 ; #DEBUG_LINE_NO:338
+            close = False ; #DEBUG_LINE_NO:340
+          EndIf
+        Else
+          canPlace = False ; #DEBUG_LINE_NO:343
+          placeDistance = maxDistance - 500 - markerDistance as Int ; #DEBUG_LINE_NO:344
+          close = True ; #DEBUG_LINE_NO:346
+        EndIf
+      ElseIf setWaterWell
+        canPlace = True ; #DEBUG_LINE_NO:349
+        placeDistance = 0 ; #DEBUG_LINE_NO:350
       EndIf
-    ElseIf setWaterWell
-      canPlace = True ; #DEBUG_LINE_NO:349
-      placeDistance = 0 ; #DEBUG_LINE_NO:350
     EndIf
     If stage == 1 ; #DEBUG_LINE_NO:353
-      If canPlace ; #DEBUG_LINE_NO:354
+      If canPlace && glowState != 1 ; #DEBUG_LINE_NO:354
         RedGlow.Stop(CurrentObject) ; #DEBUG_LINE_NO:355
         GreenGlow.Play(CurrentObject, -1.0) ; #DEBUG_LINE_NO:356
-      Else
+        glowState = 1
+      ElseIf !canPlace && glowState != 2
         GreenGlow.Stop(CurrentObject) ; #DEBUG_LINE_NO:358
         RedGlow.Play(CurrentObject, -1.0) ; #DEBUG_LINE_NO:359
+        glowState = 2
       EndIf
-      Self.RegisterForSingleUpdate(0.01) ; #DEBUG_LINE_NO:362
+      Self.RegisterForSingleUpdate(UpdateInterval) ; #DEBUG_LINE_NO:362
     EndIf
   EndIf
 EndEvent
