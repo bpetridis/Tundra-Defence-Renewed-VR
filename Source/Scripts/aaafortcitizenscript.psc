@@ -10,6 +10,10 @@ ScriptName aaaFortCitizenScript Extends Actor
 
 ;-- Variables ---------------------------------------
 
+; Which removal is pending: 0 none, 1 delete only. A citizen has one update timer, shared between
+; the wander tick below and this delayed delete, so OnUpdate checks this first and returns.
+Int pendingDelete
+
 ;-- Properties --------------------------------------
 Message Property CitizenDialog Auto
 ObjectReference Property House Auto
@@ -46,22 +50,33 @@ Event OnActivate(ObjectReference akActivator)
   If Self.IsDead() && (MainQuest as aaafortmainquestscript).ScavengerCount > 0 && (akActivator != Game.GetPlayer() as ObjectReference) ; #DEBUG_LINE_NO:30
     If (MainQuest as aaafortmainquestscript).ScavengerCrateRef != None ; #DEBUG_LINE_NO:31
       Self.RemoveAllItems((MainQuest as aaafortmainquestscript).ScavengerCrateRef, False, False) ; #DEBUG_LINE_NO:32
-      Utility.Wait(5 as Float) ; #DEBUG_LINE_NO:33
-      Self.Delete() ; #DEBUG_LINE_NO:34
+      ; Was Utility.Wait(5) then Delete(). The items have already moved.
+      pendingDelete = 1
+      Self.UnregisterForUpdate()
+      Self.RegisterForSingleUpdate(5 as Float) ; #DEBUG_LINE_NO:33
     EndIf
   EndIf
 EndEvent
 
+; Was Utility.Wait(30) then Delete(). Unregistering first also stops the wander tick, which a
+; dead citizen has no business running.
 Event OnDeath(Actor akKiller)
   (MainQuest as aaafortmainquestscript).CitizenCount = (MainQuest as aaafortmainquestscript).CitizenCount - 1 ; #DEBUG_LINE_NO:40
   If House != None && House.IsEnabled() ; #DEBUG_LINE_NO:41
     (House as aaaforthousescript).currentCitizens = (House as aaaforthousescript).currentCitizens - 1 ; #DEBUG_LINE_NO:42
   EndIf
-  Utility.Wait(30 as Float) ; #DEBUG_LINE_NO:44
-  Self.Delete() ; #DEBUG_LINE_NO:45
+  pendingDelete = 1
+  Self.UnregisterForUpdate()
+  Self.RegisterForSingleUpdate(30 as Float) ; #DEBUG_LINE_NO:44
 EndEvent
 
 Event OnUpdate()
+  ; A pending delete owns the timer. Nothing below should run on a corpse.
+  If pendingDelete != 0
+    pendingDelete = 0
+    Self.Delete() ; #DEBUG_LINE_NO:45
+    Return
+  EndIf
   If (MainQuest as aaafortmainquestscript).InnFromMarker != None && Self.IsInInterior() && Self.GetParentCell() == (MainQuest as aaafortmainquestscript).InnMarker.GetParentCell() ; #DEBUG_LINE_NO:49
     Int random = Utility.RandomInt(1, 2) ; #DEBUG_LINE_NO:50
     If random == 1 ; #DEBUG_LINE_NO:51
@@ -81,10 +96,18 @@ Event OnUpdate()
   EndIf
 EndEvent
 
+; Guarded so that a cell load during the 30 second removal delay cannot replace the pending
+; delete with a wander tick and leave the corpse behind for good.
 Event OnCellAttach()
-  Self.RegisterForSingleUpdate(180 as Float)
+  If pendingDelete == 0 && !Self.IsDead()
+    Self.RegisterForSingleUpdate(180 as Float)
+  EndIf
 EndEvent
 
+; Must not cancel a pending delete. The original Utility.Wait(30) ran to completion whether or not
+; the player walked away, so unregistering here would strand the corpse permanently.
 Event OnCellDetach()
-  Self.UnregisterForUpdate()
+  If pendingDelete == 0
+    Self.UnregisterForUpdate()
+  EndIf
 EndEvent

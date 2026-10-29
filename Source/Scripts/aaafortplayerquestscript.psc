@@ -10,6 +10,12 @@ ScriptName aaaFortPlayerQuestScript Extends Quest conditional
 
 ;-- Variables ---------------------------------------
 
+; Real time at which the stationary-guard purge window closes, or 0 when no purge is running.
+; KillStationaryGuards used to hold a Utility.Wait(60) across the whole window. This script has
+; one update timer and the raid watcher already uses it, so the purge cannot simply register its
+; own - it shares the watcher's tick and compares against this deadline instead.
+Float purgeEndTime
+
 ;-- Properties --------------------------------------
 ObjectReference Property BoundaryMarkerA Auto
 ObjectReference Property BoundaryMarkerB Auto
@@ -118,14 +124,22 @@ Function BeginRaid()
 EndFunction
 
 Event OnUpdate()
+  ; Close the stationary-guard purge window once its deadline passes. Shares this tick rather
+  ; than owning a timer, because a script has only one and the raid watcher below needs it too.
+  If purgeEndTime > 0.0 && Utility.GetCurrentRealTime() >= purgeEndTime
+    purgeEndTime = 0.0
+    killStationary = False
+    StationaryGuardPurgeEndDialog.Show(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+  EndIf
   If isRaid && Game.GetPlayer().IsInFaction(RaiderFaction) && (MainQuest as aaafortmainquestscript).GuardCount <= 0 ; #DEBUG_LINE_NO:106
     Self.EndRaid() ; #DEBUG_LINE_NO:107
   EndIf
   If isRaid && CurrentRaiders <= 0 ; #DEBUG_LINE_NO:110
     Self.EndRaid() ; #DEBUG_LINE_NO:111
   EndIf
-  ; EndRaid clears isRaid, so this stops the poll as soon as the raid is over.
-  If isRaid
+  ; EndRaid clears isRaid, so this stops the poll as soon as the raid is over, and the purge
+  ; window keeps it alive on its own for as long as it is open.
+  If isRaid || purgeEndTime > 0.0
     Self.RegisterForSingleUpdate(1 as Float)
   EndIf
 EndEvent
@@ -236,10 +250,12 @@ Function SettingsD()
   EndIf
 EndFunction
 
+; Opens a sixty second window during which each stationary guard's own 60 second tick notices
+; killStationary and removes itself. Was a held Utility.Wait(60); now a deadline serviced by the
+; OnUpdate tick above, which runs at one second while the window is open.
 Function KillStationaryGuards()
-  Utility.Wait(60 as Float) ; #DEBUG_LINE_NO:263
-  killStationary = False ; #DEBUG_LINE_NO:264
-  StationaryGuardPurgeEndDialog.Show(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0) ; #DEBUG_LINE_NO:265
+  purgeEndTime = Utility.GetCurrentRealTime() + 60.0 ; #DEBUG_LINE_NO:263
+  Self.RegisterForSingleUpdate(1 as Float)
 EndFunction
 
 Function Raid()

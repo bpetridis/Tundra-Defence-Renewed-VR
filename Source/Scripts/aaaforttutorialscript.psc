@@ -12,6 +12,11 @@ ScriptName aaaFortTutorialScript Extends Quest
 Bool guardDialog = False
 Bool hasBoundaries = False
 
+; Whether the opening handout in RunIntro has happened yet. OnInit used to Utility.Wait(5) before
+; running it, which holds a script stack during quest startup - that is, during a load screen,
+; the worst possible moment to be holding anything. It is now a timer that OnUpdate dispatches.
+Bool introDone
+
 ;-- Properties --------------------------------------
 Message Property BarracksMessage Auto
 Potion Property BarracksPlan Auto
@@ -50,7 +55,10 @@ Bool Property firstRaid = False Auto
 ; Skipped compiler generated GotoState
 
 Event OnInit()
-  Utility.Wait(5 as Float) ; #DEBUG_LINE_NO:39
+  Self.RegisterForSingleUpdate(5 as Float) ; #DEBUG_LINE_NO:39
+EndEvent
+
+Function RunIntro()
   TutorialQuest.SetStage(10) ; #DEBUG_LINE_NO:40
   Game.GetPlayer().AddItem(WaterWellPlan as Form, 1, False) ; #DEBUG_LINE_NO:41
   Game.GetPlayer().AddItem(ChangeRotationPotion as Form, 1, False) ; #DEBUG_LINE_NO:42
@@ -62,9 +70,16 @@ Event OnInit()
   IntroMessage.Show(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0) ; #DEBUG_LINE_NO:48
   (MainQuest as aaafortmainquestscript).setWaterWell = True ; #DEBUG_LINE_NO:49
   Self.RegisterForSingleUpdate(10 as Float) ; #DEBUG_LINE_NO:50
-EndEvent
+EndFunction
 
 Event OnUpdate()
+  ; The first tick after OnInit is the opening handout, five seconds in, exactly as before. It
+  ; re-arms the ten second cycle itself, so the first tutorial tick still lands at fifteen.
+  If !introDone
+    introDone = True
+    Self.RunIntro()
+    Return
+  EndIf
   If TutorialQuest.GetStage() == 20 && !hasBoundaries ; #DEBUG_LINE_NO:54
     TutorialQuest.SetObjectiveCompleted(10, True) ; #DEBUG_LINE_NO:55
     TutorialQuest.SetObjectiveDisplayed(20, True, False) ; #DEBUG_LINE_NO:56

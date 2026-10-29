@@ -10,6 +10,15 @@ ScriptName aaaFortStationaryGuardScript Extends Actor
 
 ;-- Variables ---------------------------------------
 
+; An actor has exactly one update timer, and three things here need a delay: the post-load
+; settle that records the guard's post, the delayed corpse removal, and the normal 60 second
+; reposition cycle. These flags tell OnUpdate which of them a tick belongs to. None of them now
+; holds a script stack open while it waits.
+Bool pendingLoadInit
+
+; 0 none, 1 delete only, 2 salvage to the scavenger crate then delete.
+Int pendingDelete
+
 ;-- Properties --------------------------------------
 ActorBase Property AltmerVersion Auto
 Message Property ChangeGuardDialog Auto
@@ -132,14 +141,26 @@ Event OnActivate(ObjectReference akActivator)
   If Self.IsDead() && (MainQuest as aaafortmainquestscript).ScavengerCount > 0 && (akActivator != Game.GetPlayer() as ObjectReference) ; #DEBUG_LINE_NO:121
     If (MainQuest as aaafortmainquestscript).ScavengerCrateRef != None ; #DEBUG_LINE_NO:122
       Self.RemoveAllItems((MainQuest as aaafortmainquestscript).ScavengerCrateRef, False, False) ; #DEBUG_LINE_NO:123
-      Utility.Wait(5 as Float) ; #DEBUG_LINE_NO:124
-      Self.Delete() ; #DEBUG_LINE_NO:125
+      ; Was Utility.Wait(5) then Delete(). The items have already moved.
+      pendingLoadInit = False
+      pendingDelete = 1
+      Self.UnregisterForUpdate()
+      Self.RegisterForSingleUpdate(5 as Float) ; #DEBUG_LINE_NO:124
     EndIf
   EndIf
 EndEvent
 
+; The second-long settle before the body ran used to be a Utility.Wait holding this script's
+; stack. The delay is load-bearing here - the body records the guard's post from its position,
+; so the actor has to have finished moving first. A timer gives the same delay without the held
+; stack, and stationary guards come in numbers.
 Event OnLoad()
-  Utility.Wait(1 as Float) ; #DEBUG_LINE_NO:131
+  pendingLoadInit = True
+  Self.UnregisterForUpdate()
+  Self.RegisterForSingleUpdate(1 as Float) ; #DEBUG_LINE_NO:131
+EndEvent
+
+Function LoadInit()
   If !isReady ; #DEBUG_LINE_NO:132
     posx = Self.GetPositionX() ; #DEBUG_LINE_NO:133
     posy = Self.GetPositionY() ; #DEBUG_LINE_NO:134
@@ -155,9 +176,28 @@ Event OnLoad()
   Else
     Self.RegisterForSingleUpdate(60 as Float) ; #DEBUG_LINE_NO:145
   EndIf
-EndEvent
+EndFunction
 
 Event OnUpdate()
+  ; One timer, three users. A pending delete wins, then the post-load settle, then the normal
+  ; 60 second cycle. Each branch leaves the timer armed the way the original code did.
+  If pendingDelete != 0
+    If pendingDelete == 2
+      If (MainQuest as aaafortmainquestscript).ScavengerCount > 0 && !(MainQuest as aaafortmainquestscript).equipBoxEnabled ; #DEBUG_LINE_NO:193
+        If (MainQuest as aaafortmainquestscript).ScavengerCrateRef != None ; #DEBUG_LINE_NO:194
+          Self.RemoveAllItems((MainQuest as aaafortmainquestscript).ScavengerCrateRef, False, False) ; #DEBUG_LINE_NO:195
+        EndIf
+      EndIf
+    EndIf
+    pendingDelete = 0
+    Self.Delete() ; #DEBUG_LINE_NO:198
+    Return
+  EndIf
+  If pendingLoadInit
+    pendingLoadInit = False
+    Self.LoadInit()
+    Return
+  EndIf
   If (PlayerQuest as aaafortplayerquestscript).killStationary ; #DEBUG_LINE_NO:150
     (MainQuest as aaafortmainquestscript).GuardCount = (MainQuest as aaafortmainquestscript).GuardCount - 1 ; #DEBUG_LINE_NO:151
     Game.GetPlayer().AddItem(GuardPlan as Form, 1, False) ; #DEBUG_LINE_NO:152
@@ -189,14 +229,14 @@ Function UpdateGear()
   Self.SetPlayerTeammate(True, True) ; #DEBUG_LINE_NO:178
 EndFunction
 
+; The other two-minute Wait, alongside the one in aaafortraiderscript. Between them they were the
+; two worst offenders: during a raid both sides take casualties, and every corpse on both sides
+; held a suspended script stack for two full minutes. The salvage stays on the delayed side
+; because the original read ScavengerCount, equipBoxEnabled and the crate AFTER the wait.
 Event OnDeath(Actor akKiller)
+  pendingLoadInit = False
+  pendingDelete = 2
   Self.UnregisterForUpdate() ; #DEBUG_LINE_NO:190
   (MainQuest as aaafortmainquestscript).GuardCount = (MainQuest as aaafortmainquestscript).GuardCount - 1 ; #DEBUG_LINE_NO:191
-  Utility.Wait(120 as Float) ; #DEBUG_LINE_NO:192
-  If (MainQuest as aaafortmainquestscript).ScavengerCount > 0 && !(MainQuest as aaafortmainquestscript).equipBoxEnabled ; #DEBUG_LINE_NO:193
-    If (MainQuest as aaafortmainquestscript).ScavengerCrateRef != None ; #DEBUG_LINE_NO:194
-      Self.RemoveAllItems((MainQuest as aaafortmainquestscript).ScavengerCrateRef, False, False) ; #DEBUG_LINE_NO:195
-    EndIf
-  EndIf
-  Self.Delete() ; #DEBUG_LINE_NO:198
+  Self.RegisterForSingleUpdate(120 as Float) ; #DEBUG_LINE_NO:192
 EndEvent
