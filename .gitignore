@@ -1,0 +1,13 @@
+# Reproducible from original/*.bsa with tools/Extract-Bsa.ps1 - no need to version them
+extracted/meshes/
+extracted/sound/
+
+# Build output
+build/
+*.bsa.tmp
+
+# Editor / OS
+.vs/
+*.user
+Thumbs.db
+desktop.ini
