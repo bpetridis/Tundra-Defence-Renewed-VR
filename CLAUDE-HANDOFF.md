@@ -137,3 +137,56 @@ fork. Flagged to the user; his call, and it should not block the work.
 6. Audit the 50 `PlaceAtMe` sites against the 54 `Delete()` calls — the counts being close proves
    nothing; what matters is cleanup on every path.
 7. Get Aykan's wording on licensing.
+
+---
+
+# 2026-10-29 (later) — the recovered source compiles; build verified
+
+**`RESUME HERE` item 1 from the section above is DONE.** The recovered source rebuilds:
+
+```
+Batch compile of 56 files finished. 56 succeeded, 0 failed.
+```
+
+Zero errors, zero warnings. Round trip against the shipped bytecode: **54 of 56 within ±2%**,
+185,223 bytes original vs 186,162 recompiled (+0.5%). The small growth is header strings (our
+machine/user/path are longer than `Danny` / `DANNY-PC`) plus the compiler regenerating the
+`GetState`/`GotoState` pair Champollion omits. Verified that **every** script skips only that
+standard pair — nothing real was lost. Detail in `docs/04-build-verified.md`.
+
+**The project is viable. Optimisation work can now be verified rather than hoped at.**
+
+## Build setup
+
+Creation Kit is installed at `C:\Steam\steamapps\common\Skyrim Special Edition`. The CK alone is
+not enough — the base script sources ship zipped and the compiler cannot resolve `Actor`, `Form`,
+`Quest` without them:
+
+```powershell
+Expand-Archive "$CK\Data\Scripts.zip" -DestinationPath "$CK\Data"   # already done: 14,301 .psc
+```
+
+Build with `tools\Build-Scripts.ps1` (added this session). `-Compare` diffs the output against the
+shipped bytecode — **run it before and after every change**.
+
+## Two compiler traps, both cost time today
+
+1. **`-f=` resolves relative to the import paths, not the working directory.** A full path to
+   `TESV_Papyrus_Flags.flg` fails with `Unable to find flags file`, then cascades into dozens of
+   `Unknown user flag Hidden` errors and `AddItem is not a function or does not exist`. That last
+   one looks like broken source and is not. **Pass the bare filename.**
+2. **Git Bash mangles the semicolon-separated `-i=` list**, rewriting `/c/Code/...` to
+   `C:\c\Code\...`. Run the compiler from PowerShell with Windows paths.
+
+## RESUME HERE (supersedes the list above)
+
+1. **Stop the seven unguarded polls**, starting with the 1 s one in `aaafortplayerquestscript`:
+   arm on raid start, stop on raid end. Build with `-Compare` before and after.
+2. Convert the 17 long `Utility.Wait` calls to timers.
+3. Collapse the nine copy-paste raid functions — preserve `NatureRaid`'s 39 differing lines exactly.
+4. Test object placement in the headset before changing anything VR-related.
+5. Audit the 50 `PlaceAtMe` sites for cleanup on every path.
+6. Get Aykan's wording on licensing (`original/` is his, MIT covers only the revival work).
+7. Delete the dead key-binding stubs (`BindKey`, `RebindDialog`, `iGetKeyPressed`).
+
+**Nothing in the mod has been changed yet.** Everything so far is recovery, verification and notes.
