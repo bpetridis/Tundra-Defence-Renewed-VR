@@ -17,3 +17,6 @@ tools/champollion/Champollion.exe
 
 # Compiler output
 build/
+
+# Packaged test builds - reproducible with tools\Package-TestBuild.ps1
+dist/
