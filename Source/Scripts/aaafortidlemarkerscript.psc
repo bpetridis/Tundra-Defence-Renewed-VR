@@ -107,11 +107,34 @@ Function MarkersB()
   EndIf
 EndFunction
 
-Event OnUpdate()
+; Applies the show/hide choice. Split out of OnUpdate so the cell events can apply it immediately
+; rather than leaving the marker wrong until the next tick.
+Function ApplyVisibility()
   If (MainQuest as aaafortmainquestscript).hideIdleMarkers && marker != None ; #DEBUG_LINE_NO:94
     Self.Disable(False) ; #DEBUG_LINE_NO:95
   ElseIf !(MainQuest as aaafortmainquestscript).hideIdleMarkers && marker != None ; #DEBUG_LINE_NO:96
     Self.Enable(False) ; #DEBUG_LINE_NO:97
   EndIf
-  Self.RegisterForSingleUpdate(120 as Float) ; #DEBUG_LINE_NO:99
+EndFunction
+
+; This only changes what the player can see, so there is nothing to do while the fort is unloaded.
+; Each placed idle marker used to poll every 120 seconds for the rest of the game, and a built-up
+; fort has a lot of them, so the saving multiplies by however many the player has placed.
+Event OnCellAttach()
+  If marker != None
+    Self.ApplyVisibility()
+    Self.RegisterForSingleUpdate(120 as Float)
+  EndIf
+EndEvent
+
+Event OnCellDetach()
+  Self.UnregisterForUpdate()
+EndEvent
+
+Event OnUpdate()
+  Self.ApplyVisibility()
+  ; No marker placed, or it has been broken down: nothing left to keep in sync.
+  If marker != None
+    Self.RegisterForSingleUpdate(120 as Float) ; #DEBUG_LINE_NO:99
+  EndIf
 EndEvent

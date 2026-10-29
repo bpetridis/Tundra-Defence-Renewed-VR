@@ -73,5 +73,18 @@ Event OnUpdate()
       Self.MoveTo((MainQuest as aaafortmainquestscript).InnMarker, 0.0, 0.0, 0.0, True) ; #DEBUG_LINE_NO:57
     EndIf
   EndIf
-  Self.RegisterForSingleUpdate(180 as Float) ; #DEBUG_LINE_NO:60
+  ; Only wander while the fort is loaded. This moves a citizen between the inn and its entrance,
+  ; which nobody can see when the player is elsewhere, and it ran every 180 seconds per citizen
+  ; for the whole game. OnCellAttach starts it again when the player comes back.
+  If Self.Is3DLoaded()
+    Self.RegisterForSingleUpdate(180 as Float) ; #DEBUG_LINE_NO:60
+  EndIf
+EndEvent
+
+Event OnCellAttach()
+  Self.RegisterForSingleUpdate(180 as Float)
+EndEvent
+
+Event OnCellDetach()
+  Self.UnregisterForUpdate()
 EndEvent

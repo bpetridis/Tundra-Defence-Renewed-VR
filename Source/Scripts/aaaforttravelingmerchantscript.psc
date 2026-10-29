@@ -20,19 +20,21 @@ Int Property startDate = 0 Auto
 
 ; Skipped compiler generated GotoState
 
+; The merchant packs up after two game days. This used to be done by waking every 120 seconds of
+; real time and asking whether the game day had changed - so roughly 1,440 wake-ups to notice two
+; events. Papyrus has a game-time timer for exactly this: one tick per game day, same outcome.
 Event OnInit()
   currentDay = Utility.GetCurrentGameTime() as Int ; #DEBUG_LINE_NO:7
   startDate = 0 ; #DEBUG_LINE_NO:8
-  Self.RegisterForSingleUpdate(120 as Float) ; #DEBUG_LINE_NO:9
+  Self.RegisterForSingleUpdateGameTime(24.0)
 EndEvent
 
-Event OnUpdate()
-  If Utility.GetCurrentGameTime() as Int != currentDay ; #DEBUG_LINE_NO:13
-    currentDay = Utility.GetCurrentGameTime() as Int ; #DEBUG_LINE_NO:14
-    startDate += 1 ; #DEBUG_LINE_NO:15
-    If startDate > 1 ; #DEBUG_LINE_NO:16
-      Self.Delete() ; #DEBUG_LINE_NO:17
-    EndIf
+Event OnUpdateGameTime()
+  currentDay = Utility.GetCurrentGameTime() as Int ; #DEBUG_LINE_NO:14
+  startDate += 1 ; #DEBUG_LINE_NO:15
+  If startDate > 1 ; #DEBUG_LINE_NO:16
+    Self.Delete() ; #DEBUG_LINE_NO:17
+    Return
   EndIf
-  Self.RegisterForSingleUpdate(120 as Float) ; #DEBUG_LINE_NO:20
+  Self.RegisterForSingleUpdateGameTime(24.0)
 EndEvent

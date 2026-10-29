@@ -101,8 +101,21 @@ Function RebindDialog()
 EndFunction
 
 Event OnInit()
-  Self.RegisterForSingleUpdate(1 as Float) ; #DEBUG_LINE_NO:98
+  ; Only watch while a raid is actually running. Originally this armed a 1 second poll here and
+  ; re-armed it unconditionally at the end of OnUpdate, so it ran for the whole game even though
+  ; both checks below need isRaid. Covers the odd case of starting up with a raid already set.
+  If isRaid
+    Self.RegisterForSingleUpdate(1 as Float)
+  EndIf
 EndEvent
+
+; Sets the raid flag and starts the watch. Every raid function calls this instead of assigning
+; isRaid directly, so the poll can never be left running with no raid, or missing during one.
+; Re-registering while an update is already pending simply replaces it, so repeat calls are safe.
+Function BeginRaid()
+  isRaid = True
+  Self.RegisterForSingleUpdate(1 as Float)
+EndFunction
 
 Event OnUpdate()
   If isRaid && Game.GetPlayer().IsInFaction(RaiderFaction) && (MainQuest as aaafortmainquestscript).GuardCount <= 0 ; #DEBUG_LINE_NO:106
@@ -111,7 +124,10 @@ Event OnUpdate()
   If isRaid && CurrentRaiders <= 0 ; #DEBUG_LINE_NO:110
     Self.EndRaid() ; #DEBUG_LINE_NO:111
   EndIf
-  Self.RegisterForSingleUpdate(1 as Float) ; #DEBUG_LINE_NO:114
+  ; EndRaid clears isRaid, so this stops the poll as soon as the raid is over.
+  If isRaid
+    Self.RegisterForSingleUpdate(1 as Float)
+  EndIf
 EndEvent
 
 Int Function iGetKeyPressed(Int aiDXScanCode)
@@ -369,7 +385,7 @@ Function BanditRaid(Int difficulty)
       EndIf
     EndIf
     CurrentRaiders += 1 ; #DEBUG_LINE_NO:412
-    isRaid = True ; #DEBUG_LINE_NO:413
+    Self.BeginRaid()
     If PlayerRaids ; #DEBUG_LINE_NO:414
       Game.GetPlayer().RemoveFromFaction(FortFaction) ; #DEBUG_LINE_NO:415
       Game.GetPlayer().AddToFaction(RaiderFaction) ; #DEBUG_LINE_NO:416
@@ -400,7 +416,7 @@ Function BanditRaid(Int difficulty)
       EndIf
     EndIf
     CurrentRaiders += 1 ; #DEBUG_LINE_NO:443
-    isRaid = True ; #DEBUG_LINE_NO:444
+    Self.BeginRaid()
     If PlayerRaids ; #DEBUG_LINE_NO:445
       Game.GetPlayer().RemoveFromFaction(FortFaction) ; #DEBUG_LINE_NO:446
       Game.GetPlayer().AddToFaction(RaiderFaction) ; #DEBUG_LINE_NO:447
@@ -431,7 +447,7 @@ Function BanditRaid(Int difficulty)
       EndIf
     EndIf
     CurrentRaiders += 1 ; #DEBUG_LINE_NO:474
-    isRaid = True ; #DEBUG_LINE_NO:475
+    Self.BeginRaid()
     If PlayerRaids ; #DEBUG_LINE_NO:476
       Game.GetPlayer().RemoveFromFaction(FortFaction) ; #DEBUG_LINE_NO:477
       Game.GetPlayer().AddToFaction(RaiderFaction) ; #DEBUG_LINE_NO:478
@@ -495,7 +511,7 @@ Function DraugrRaid(Int difficulty)
       EndIf
     EndIf
     CurrentRaiders += 1 ; #DEBUG_LINE_NO:541
-    isRaid = True ; #DEBUG_LINE_NO:542
+    Self.BeginRaid()
     If PlayerRaids ; #DEBUG_LINE_NO:543
       Game.GetPlayer().RemoveFromFaction(FortFaction) ; #DEBUG_LINE_NO:544
       Game.GetPlayer().AddToFaction(RaiderFaction) ; #DEBUG_LINE_NO:545
@@ -526,7 +542,7 @@ Function DraugrRaid(Int difficulty)
       EndIf
     EndIf
     CurrentRaiders += 1 ; #DEBUG_LINE_NO:572
-    isRaid = True ; #DEBUG_LINE_NO:573
+    Self.BeginRaid()
     If PlayerRaids ; #DEBUG_LINE_NO:574
       Game.GetPlayer().RemoveFromFaction(FortFaction) ; #DEBUG_LINE_NO:575
       Game.GetPlayer().AddToFaction(RaiderFaction) ; #DEBUG_LINE_NO:576
@@ -557,7 +573,7 @@ Function DraugrRaid(Int difficulty)
       EndIf
     EndIf
     CurrentRaiders += 1 ; #DEBUG_LINE_NO:603
-    isRaid = True ; #DEBUG_LINE_NO:604
+    Self.BeginRaid()
     If PlayerRaids ; #DEBUG_LINE_NO:605
       Game.GetPlayer().RemoveFromFaction(FortFaction) ; #DEBUG_LINE_NO:606
       Game.GetPlayer().AddToFaction(RaiderFaction) ; #DEBUG_LINE_NO:607
@@ -602,7 +618,7 @@ Function DragonRaid(Int difficulty)
       count += 1 ; #DEBUG_LINE_NO:648
       CurrentRaiders += 1 ; #DEBUG_LINE_NO:649
     EndWhile
-    isRaid = True ; #DEBUG_LINE_NO:651
+    Self.BeginRaid()
     If PlayerRaids ; #DEBUG_LINE_NO:652
       Game.GetPlayer().RemoveFromFaction(FortFaction) ; #DEBUG_LINE_NO:653
       Game.GetPlayer().AddToFaction(RaiderFaction) ; #DEBUG_LINE_NO:654
@@ -623,7 +639,7 @@ Function DragonRaid(Int difficulty)
       count += 1 ; #DEBUG_LINE_NO:669
       CurrentRaiders += 1 ; #DEBUG_LINE_NO:670
     EndWhile
-    isRaid = True ; #DEBUG_LINE_NO:672
+    Self.BeginRaid()
     If PlayerRaids ; #DEBUG_LINE_NO:673
       Game.GetPlayer().RemoveFromFaction(FortFaction) ; #DEBUG_LINE_NO:674
       Game.GetPlayer().AddToFaction(RaiderFaction) ; #DEBUG_LINE_NO:675
@@ -640,7 +656,7 @@ Function DragonRaid(Int difficulty)
       count += 1 ; #DEBUG_LINE_NO:686
       CurrentRaiders += 1 ; #DEBUG_LINE_NO:687
     EndWhile
-    isRaid = True ; #DEBUG_LINE_NO:689
+    Self.BeginRaid()
     If PlayerRaids ; #DEBUG_LINE_NO:690
       Game.GetPlayer().RemoveFromFaction(FortFaction) ; #DEBUG_LINE_NO:691
       Game.GetPlayer().AddToFaction(RaiderFaction) ; #DEBUG_LINE_NO:692
@@ -702,7 +718,7 @@ Function NatureRaid(Int difficulty)
       count += 1 ; #DEBUG_LINE_NO:751
       CurrentRaiders += 1 ; #DEBUG_LINE_NO:752
     EndWhile
-    isRaid = True ; #DEBUG_LINE_NO:754
+    Self.BeginRaid()
     If PlayerRaids ; #DEBUG_LINE_NO:755
       Game.GetPlayer().RemoveFromFaction(FortFaction) ; #DEBUG_LINE_NO:756
       Game.GetPlayer().AddToFaction(RaiderFaction) ; #DEBUG_LINE_NO:757
@@ -725,7 +741,7 @@ Function NatureRaid(Int difficulty)
       count += 1 ; #DEBUG_LINE_NO:774
       CurrentRaiders += 1 ; #DEBUG_LINE_NO:775
     EndWhile
-    isRaid = True ; #DEBUG_LINE_NO:777
+    Self.BeginRaid()
     If PlayerRaids ; #DEBUG_LINE_NO:778
       Game.GetPlayer().RemoveFromFaction(FortFaction) ; #DEBUG_LINE_NO:779
       Game.GetPlayer().AddToFaction(RaiderFaction) ; #DEBUG_LINE_NO:780
@@ -748,7 +764,7 @@ Function NatureRaid(Int difficulty)
       count += 1 ; #DEBUG_LINE_NO:797
       CurrentRaiders += 1 ; #DEBUG_LINE_NO:798
     EndWhile
-    isRaid = True ; #DEBUG_LINE_NO:800
+    Self.BeginRaid()
     If PlayerRaids ; #DEBUG_LINE_NO:801
       Game.GetPlayer().RemoveFromFaction(FortFaction) ; #DEBUG_LINE_NO:802
       Game.GetPlayer().AddToFaction(RaiderFaction) ; #DEBUG_LINE_NO:803
@@ -811,7 +827,7 @@ Function GiantRaid(Int difficulty)
       EndIf
     EndIf
     CurrentRaiders += 1 ; #DEBUG_LINE_NO:865
-    isRaid = True ; #DEBUG_LINE_NO:866
+    Self.BeginRaid()
     If PlayerRaids ; #DEBUG_LINE_NO:867
       Game.GetPlayer().RemoveFromFaction(FortFaction) ; #DEBUG_LINE_NO:868
       Game.GetPlayer().AddToFaction(RaiderFaction) ; #DEBUG_LINE_NO:869
@@ -842,7 +858,7 @@ Function GiantRaid(Int difficulty)
       EndIf
     EndIf
     CurrentRaiders += 1 ; #DEBUG_LINE_NO:896
-    isRaid = True ; #DEBUG_LINE_NO:897
+    Self.BeginRaid()
     If PlayerRaids ; #DEBUG_LINE_NO:898
       Game.GetPlayer().RemoveFromFaction(FortFaction) ; #DEBUG_LINE_NO:899
       Game.GetPlayer().AddToFaction(RaiderFaction) ; #DEBUG_LINE_NO:900
@@ -873,7 +889,7 @@ Function GiantRaid(Int difficulty)
       EndIf
     EndIf
     CurrentRaiders += 1 ; #DEBUG_LINE_NO:927
-    isRaid = True ; #DEBUG_LINE_NO:928
+    Self.BeginRaid()
     If PlayerRaids ; #DEBUG_LINE_NO:929
       Game.GetPlayer().RemoveFromFaction(FortFaction) ; #DEBUG_LINE_NO:930
       Game.GetPlayer().AddToFaction(RaiderFaction) ; #DEBUG_LINE_NO:931
@@ -932,7 +948,7 @@ Function NecroRaid(Int difficulty)
       EndIf
     EndIf
     CurrentRaiders += 1 ; #DEBUG_LINE_NO:989
-    isRaid = True ; #DEBUG_LINE_NO:990
+    Self.BeginRaid()
     If PlayerRaids ; #DEBUG_LINE_NO:991
       Game.GetPlayer().RemoveFromFaction(FortFaction) ; #DEBUG_LINE_NO:992
       Game.GetPlayer().AddToFaction(RaiderFaction) ; #DEBUG_LINE_NO:993
@@ -963,7 +979,7 @@ Function NecroRaid(Int difficulty)
       EndIf
     EndIf
     CurrentRaiders += 1 ; #DEBUG_LINE_NO:1020
-    isRaid = True ; #DEBUG_LINE_NO:1021
+    Self.BeginRaid()
     If PlayerRaids ; #DEBUG_LINE_NO:1022
       Game.GetPlayer().RemoveFromFaction(FortFaction) ; #DEBUG_LINE_NO:1023
       Game.GetPlayer().AddToFaction(RaiderFaction) ; #DEBUG_LINE_NO:1024
@@ -994,7 +1010,7 @@ Function NecroRaid(Int difficulty)
       EndIf
     EndIf
     CurrentRaiders += 1 ; #DEBUG_LINE_NO:1051
-    isRaid = True ; #DEBUG_LINE_NO:1052
+    Self.BeginRaid()
     If PlayerRaids ; #DEBUG_LINE_NO:1053
       Game.GetPlayer().RemoveFromFaction(FortFaction) ; #DEBUG_LINE_NO:1054
       Game.GetPlayer().AddToFaction(RaiderFaction) ; #DEBUG_LINE_NO:1055
@@ -1053,7 +1069,7 @@ Function VampireRaid(Int difficulty)
       EndIf
     EndIf
     CurrentRaiders += 1 ; #DEBUG_LINE_NO:1113
-    isRaid = True ; #DEBUG_LINE_NO:1114
+    Self.BeginRaid()
     If PlayerRaids ; #DEBUG_LINE_NO:1115
       Game.GetPlayer().RemoveFromFaction(FortFaction) ; #DEBUG_LINE_NO:1116
       Game.GetPlayer().AddToFaction(RaiderFaction) ; #DEBUG_LINE_NO:1117
@@ -1084,7 +1100,7 @@ Function VampireRaid(Int difficulty)
       EndIf
     EndIf
     CurrentRaiders += 1 ; #DEBUG_LINE_NO:1144
-    isRaid = True ; #DEBUG_LINE_NO:1145
+    Self.BeginRaid()
     If PlayerRaids ; #DEBUG_LINE_NO:1146
       Game.GetPlayer().RemoveFromFaction(FortFaction) ; #DEBUG_LINE_NO:1147
       Game.GetPlayer().AddToFaction(RaiderFaction) ; #DEBUG_LINE_NO:1148
@@ -1115,7 +1131,7 @@ Function VampireRaid(Int difficulty)
       EndIf
     EndIf
     CurrentRaiders += 1 ; #DEBUG_LINE_NO:1175
-    isRaid = True ; #DEBUG_LINE_NO:1176
+    Self.BeginRaid()
     If PlayerRaids ; #DEBUG_LINE_NO:1177
       Game.GetPlayer().RemoveFromFaction(FortFaction) ; #DEBUG_LINE_NO:1178
       Game.GetPlayer().AddToFaction(RaiderFaction) ; #DEBUG_LINE_NO:1179
@@ -1174,7 +1190,7 @@ Function WerewolfRaid(Int difficulty)
       EndIf
     EndIf
     CurrentRaiders += 1 ; #DEBUG_LINE_NO:1237
-    isRaid = True ; #DEBUG_LINE_NO:1238
+    Self.BeginRaid()
     If PlayerRaids ; #DEBUG_LINE_NO:1239
       Game.GetPlayer().RemoveFromFaction(FortFaction) ; #DEBUG_LINE_NO:1240
       Game.GetPlayer().AddToFaction(RaiderFaction) ; #DEBUG_LINE_NO:1241
@@ -1205,7 +1221,7 @@ Function WerewolfRaid(Int difficulty)
       EndIf
     EndIf
     CurrentRaiders += 1 ; #DEBUG_LINE_NO:1268
-    isRaid = True ; #DEBUG_LINE_NO:1269
+    Self.BeginRaid()
     If PlayerRaids ; #DEBUG_LINE_NO:1270
       Game.GetPlayer().RemoveFromFaction(FortFaction) ; #DEBUG_LINE_NO:1271
       Game.GetPlayer().AddToFaction(RaiderFaction) ; #DEBUG_LINE_NO:1272
@@ -1236,7 +1252,7 @@ Function WerewolfRaid(Int difficulty)
       EndIf
     EndIf
     CurrentRaiders += 1 ; #DEBUG_LINE_NO:1299
-    isRaid = True ; #DEBUG_LINE_NO:1300
+    Self.BeginRaid()
     If PlayerRaids ; #DEBUG_LINE_NO:1301
       Game.GetPlayer().RemoveFromFaction(FortFaction) ; #DEBUG_LINE_NO:1302
       Game.GetPlayer().AddToFaction(RaiderFaction) ; #DEBUG_LINE_NO:1303
@@ -1299,7 +1315,7 @@ Function FalmerRaid(Int difficulty)
       EndIf
     EndIf
     CurrentRaiders += 1 ; #DEBUG_LINE_NO:1365
-    isRaid = True ; #DEBUG_LINE_NO:1366
+    Self.BeginRaid()
     If PlayerRaids ; #DEBUG_LINE_NO:1367
       Game.GetPlayer().RemoveFromFaction(FortFaction) ; #DEBUG_LINE_NO:1368
       Game.GetPlayer().AddToFaction(RaiderFaction) ; #DEBUG_LINE_NO:1369
@@ -1330,7 +1346,7 @@ Function FalmerRaid(Int difficulty)
       EndIf
     EndIf
     CurrentRaiders += 1 ; #DEBUG_LINE_NO:1396
-    isRaid = True ; #DEBUG_LINE_NO:1397
+    Self.BeginRaid()
     If PlayerRaids ; #DEBUG_LINE_NO:1398
       Game.GetPlayer().RemoveFromFaction(FortFaction) ; #DEBUG_LINE_NO:1399
       Game.GetPlayer().AddToFaction(RaiderFaction) ; #DEBUG_LINE_NO:1400
@@ -1361,7 +1377,7 @@ Function FalmerRaid(Int difficulty)
       EndIf
     EndIf
     CurrentRaiders += 1 ; #DEBUG_LINE_NO:1427
-    isRaid = True ; #DEBUG_LINE_NO:1428
+    Self.BeginRaid()
     If PlayerRaids ; #DEBUG_LINE_NO:1429
       Game.GetPlayer().RemoveFromFaction(FortFaction) ; #DEBUG_LINE_NO:1430
       Game.GetPlayer().AddToFaction(RaiderFaction) ; #DEBUG_LINE_NO:1431

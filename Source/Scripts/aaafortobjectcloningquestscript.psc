@@ -23,10 +23,7 @@ ReferenceAlias Property ClosestObject5 Auto
 
 ; Skipped compiler generated GotoState
 
-Event OnInit()
-  Self.RegisterForSingleUpdate(5 as Float) ; #DEBUG_LINE_NO:10
-EndEvent
-
-Event OnUpdate()
-  Self.RegisterForSingleUpdate(5 as Float) ; #DEBUG_LINE_NO:15
-EndEvent
+; Removed: OnInit armed a 5 second poll and OnUpdate did nothing except arm it again, so this
+; quest woke up every 5 seconds for the whole game to do absolutely nothing. The quest exists to
+; hold the ClosestObject aliases above, which the quest system fills - no script tick is involved.
+; Nothing else called into this script, so removing both events changes no behaviour.
