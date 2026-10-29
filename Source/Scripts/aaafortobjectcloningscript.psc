@@ -19,11 +19,11 @@ Keyword Property aaaFortObjectCloningKey Auto
 
 ; Skipped compiler generated GotoState
 
-Event OnHit(ObjectReference akAggressor, Form akSource, Projectile akProjectile, Bool abPowerAttack, Bool abSneakAttack, Bool abBashAttack, Bool abHitBlocked)
-  Debug.Notification(Self.GetReference().GetBaseObject() as String + "I was hit!") ; #DEBUG_LINE_NO:6
-  If akAggressor == Game.GetPlayer() as ObjectReference ; #DEBUG_LINE_NO:7
-    If akSource.HasKeyword(aaaFortObjectCloningKey) ; #DEBUG_LINE_NO:8
-      
-    EndIf
-  EndIf
-EndEvent
+; Removed: an OnHit handler whose only live statement was a debug notification reading
+; "<base object>I was hit!" - development scaffolding that shipped to users. The inner If, which
+; checked the hit source for the cloner keyword, had an empty body, so the handler did nothing
+; else. This script sits on the five ClosestObject aliases, so it was registering an OnHit
+; handler on whatever happened to be nearest the player and printing to screen on every hit.
+;
+; See aaafortobjectcloningresetterscript for why the whole cloning feature is inert. The keyword
+; property is kept so the ESP's script binding still resolves.
